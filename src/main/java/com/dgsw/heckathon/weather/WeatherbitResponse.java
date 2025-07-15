@@ -1,4 +1,4 @@
-package com.dgsw.heckathon;
+package com.dgsw.heckathon.weather;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
