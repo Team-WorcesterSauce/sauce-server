@@ -15,6 +15,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class WeatherbitApiService {
@@ -33,7 +35,6 @@ public class WeatherbitApiService {
     public WeatherbitApiService(ObjectMapper objectMapper) {
         this.httpClient = HttpClient.newBuilder().build();
         this.objectMapper = objectMapper;
-        // Weatherbit API 응답은 비교적 표준적이지만, 혹시 모를 경우를 대비하여 설정 유지
         this.objectMapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
     }
 
@@ -100,6 +101,36 @@ public class WeatherbitApiService {
         return executeApiCall(uri);
     }
 
+    // OpenAI에 전달할 요약 기능은 OpenAiDisasterService로 이동하므로 여기서 제거합니다.
+    /*
+    public String getForecastSummaryForOpenAI(double lat, double lon, int hours) {
+        WeatherbitResponse forecastResponse = getHourlyForecast(lat, lon, hours);
+
+        if (forecastResponse != null && forecastResponse.getData() != null && !forecastResponse.getData().isEmpty()) {
+            StringBuilder summary = new StringBuilder();
+            summary.append("위도: ").append(lat).append(", 경도: ").append(lon).append(" 지역의 ");
+            summary.append("향후 ").append(hours).append("시간 동안의 시간별 기상 예보입니다:\n");
+
+            List<WeatherbitResponse.WeatherData> relevantData = forecastResponse.getData().stream()
+                    .limit(hours) // 요청한 시간만큼만 데이터 사용
+                    .collect(Collectors.toList());
+
+            for (WeatherbitResponse.WeatherData data : relevantData) {
+                summary.append("- 시간: ").append(data.getTimestampLocal())
+                        .append(", 온도: ").append(data.getTemp()).append("°C")
+                        .append(", 습도: ").append(data.getRh()).append("%")
+                        .append(", 강수량: ").append(data.getPrecip()).append("mm/h")
+                        .append(", 풍속: ").append(data.getWindSpd()).append("m/s")
+                        .append(", 날씨: ").append(data.getWeather().getDescription())
+                        .append("\n");
+            }
+            return summary.toString();
+        } else {
+            return "기상 예보 데이터를 가져오는 데 실패했습니다.";
+        }
+    }
+    */
+
     private WeatherbitResponse executeApiCall(URI uri) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(uri)
@@ -111,7 +142,7 @@ public class WeatherbitApiService {
 
             if (response.statusCode() == 200) {
                 logger.info("Weatherbit API 호출 성공: {}", uri);
-                logger.debug("Weatherbit API 응답 본문: {}", response.body()); // 디버그 레벨로 상세 응답 기록
+                logger.debug("Weatherbit API 응답 본문: {}", response.body());
                 return objectMapper.readValue(response.body(), WeatherbitResponse.class);
             } else {
                 logger.error("Weatherbit API 호출 실패. 상태 코드: {}, 응답: {}", response.statusCode(), response.body());

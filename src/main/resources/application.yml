@@ -3,6 +3,11 @@ weatherbit:
     key: 6148f33f085843df9a30b230432e2164
     base-url: https://api.weatherbit.io/v2.0
 
+openai:
+  api:
+    key: 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
+    base-url: https://api.openai.com/v1/chat/completions
+
 logging:
   level:
     com.example.weatherservice: INFO
