@@ -1,5 +1,6 @@
 package com.dgsw.heckathon.route;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -130,6 +131,7 @@ public class RouteService {
         weatherData.forEach((key, value) -> userContentBuilder.append(String.format("%s: %s\n", key, value)));
 
         // OpenAI에게 JSON만 반환하도록 더 강력히 지시하는 프롬프트 추가
+        // ```json``` 블록을 요구하는 것이 아니라, 오직 JSON만 요구합니다.
         userContentBuilder.append("The ONLY output should be a JSON object with a single key 'waypoints', which contains an array of objects. Each object in the array must have 'latitude' and 'longitude' keys with double values. DO NOT include any explanatory text, markdown outside of the JSON, or any other conversational elements. Provide ONLY the JSON. Example format: {\"waypoints\": [{\"latitude\": 34.123, \"longitude\": -118.456}, {\"latitude\": 34.567, \"longitude\": -119.890}]}");
 
         ObjectNode userMessage = objectMapper.createObjectNode();
@@ -170,8 +172,7 @@ public class RouteService {
 
 
     // --- OpenAI 응답 파싱 ---
-    private static final Pattern JSON_BLOCK_PATTERN = Pattern.compile("```json\\s*([\\s\\S]*?)\\s*```");
-
+    // ```json``` 블록이 있든 없든 처리할 수 있도록 수정
     private List<Waypoint> parseOpenAIResponse(String openaiResponse) throws Exception {
         List<Waypoint> waypoints = new ArrayList<>();
         JsonNode rootNode = objectMapper.readTree(openaiResponse);
@@ -182,41 +183,40 @@ public class RouteService {
             String contentString = messageContentNode.asText();
             System.out.println("OpenAI Content String (before JSON extraction): " + contentString); // 디버깅 추가
 
+            JsonNode actualRouteData;
             String jsonToParse = null;
 
-            // 정규 표현식을 사용하여 ```json ... ``` 블록 안의 내용 추출
-            Matcher matcher = JSON_BLOCK_PATTERN.matcher(contentString);
+            // 1. 먼저 ```json ... ``` 블록이 있는지 시도한다.
+            Matcher matcher = Pattern.compile("```json\\s*([\\s\\S]*?)\\s*```").matcher(contentString);
             if (matcher.find()) {
-                jsonToParse = matcher.group(1); // 첫 번째 캡처 그룹이 JSON 내용입니다.
+                jsonToParse = matcher.group(1); // 첫 번째 캡처 그룹이 JSON 내용
                 System.out.println("Extracted JSON block: " + jsonToParse); // 추출된 JSON 블록 출력
             } else {
-                // ```json 블록이 없을 경우, contentString 전체가 JSON일 가능성도 고려
-                // 하지만 현재 OpenAI의 행동으로 보아 이 경우는 적을 것입니다.
-                // 여기서는 안전하게 JSON이 없다고 판단하고 오류를 던집니다.
-                System.err.println("No ```json``` block found in OpenAI response content. Raw content was: " + contentString);
-                throw new IllegalStateException("OpenAI did not return content in the expected ```json``` block format.");
+                // 2. ```json``` 블록이 없으면, 전체 contentString가 JSON이라고 가정한다.
+                jsonToParse = contentString;
+                System.out.println("No ```json``` block found, attempting to parse entire content string as JSON: " + jsonToParse);
             }
 
-            JsonNode actualRouteData;
             try {
-                actualRouteData = objectMapper.readTree(jsonToParse); // 추출된 JSON 문자열 파싱
-            } catch (com.fasterxml.jackson.core.JsonParseException e) {
-                System.err.println("Failed to parse extracted content as JSON. Extracted content: " + jsonToParse);
-                throw new IllegalStateException("OpenAI returned content that seemed to be a JSON block, but it was not valid JSON. Extracted content: \"" + jsonToParse + "\"", e);
+                actualRouteData = objectMapper.readTree(jsonToParse); // 추출 또는 전체 JSON 문자열 파싱
+            } catch (JsonProcessingException e) { // JsonParseException은 JsonProcessingException의 하위 클래스
+                System.err.println("Failed to parse extracted content as JSON. Content attempted to parse: \"" + jsonToParse + "\"");
+                throw new IllegalStateException("OpenAI returned content that was not valid JSON. Content: \"" + jsonToParse + "\"", e);
             }
-
 
             JsonNode waypointsNode = actualRouteData.path("waypoints");
 
             if (waypointsNode.isArray()) {
                 for (JsonNode waypointNode : waypointsNode) {
-                    double lat = waypointNode.path("latitude").asDouble();
-                    double lon = waypointNode.path("longitude").asDouble();
+                    // 필드가 존재하지 않거나 숫자가 아니면 0.0을 기본값으로 사용
+                    double lat = waypointNode.path("latitude").asDouble(0.0);
+                    double lon = waypointNode.path("longitude").asDouble(0.0);
                     waypoints.add(new Waypoint(lat, lon));
                 }
             } else {
                 System.err.println("OpenAI response did not contain a 'waypoints' array as expected. Raw parsed JSON: " + actualRouteData.toPrettyString());
-                throw new IllegalStateException("OpenAI response did not contain a 'waypoints' array as expected, or the content was not valid JSON.");
+                // 'waypoints' 배열이 없으면 오류를 명확히 함
+                throw new IllegalStateException("OpenAI response content was valid JSON but did not contain a 'waypoints' array.");
             }
         } else {
             System.err.println("OpenAI response content was not a text node. Raw response: " + openaiResponse);
