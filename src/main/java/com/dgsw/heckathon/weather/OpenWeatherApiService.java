@@ -15,62 +15,48 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 @Service
-public class TomorrowioApiService {
+public class OpenWeatherApiService {
 
-    private static final Logger logger = LoggerFactory.getLogger(TomorrowioApiService.class);
+    private static final Logger logger = LoggerFactory.getLogger(OpenWeatherApiService.class);
 
-    @Value("${tomorrowio.api.key}")
+    @Value("${openweathermap.api.key}")
     private String apiKey;
 
-    @Value("${tomorrowio.api.base-url}")
-    private String baseUrl;  // 예: "https://api.tomorrow.io/v4/weather"
+    @Value("${openweathermap.api.base-url}")
+    private String baseUrl;  // 예: "https://api.openweathermap.org/data/2.5"
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    private static final String COMMON_FIELDS = String.join(",",
-            "temperature", "humidity", "precipitationIntensity", "precipitationType",
-            "windSpeed", "windDirection", "cloudCover", "weatherCode", "temperatureApparent"
-    );
-
-    public TomorrowioApiService(ObjectMapper objectMapper) {
+    public OpenWeatherApiService(ObjectMapper objectMapper) {
         this.httpClient = HttpClient.newBuilder().build();
         this.objectMapper = objectMapper;
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     public CurrentWeatherResponse getCurrentWeather(double lat, double lon) {
-        String location = lat + "," + lon;
-
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
-                .path("/realtime")
-                .queryParam("location", location)
-                .queryParam("fields", COMMON_FIELDS)
-                .queryParam("units", "metric")
-                .queryParam("apikey", apiKey)
+                .path("/weather")
+                .queryParam("lat", lat)
+                .queryParam("lon", lon)
+                .queryParam("units", "metric") // 섭씨 온도를 위해 metric 사용
+                .queryParam("appid", apiKey)
                 .build()
                 .toUri();
 
-        logger.info("Realtime API 호출 URI: {}", uri);
+        logger.info("Current Weather API 호출 URI: {}", uri);
 
         return executeCurrentWeatherApiCall(uri);
     }
 
-    public ForecastResponse getForecast(double lat, double lon, String timesteps, String startTime, String endTime) {
-        String location = lat + "," + lon;
-
-        // startTime, endTime은 ISO 8601 UTC (Z포함) 형식인지 반드시 확인
-        // 예: 2025-07-15T13:00:00Z
-
+    public ForecastResponse getForecast(double lat, double lon) {
+        // OpenWeatherMap의 기본 예보는 5일치 3시간 단위이므로, 별도의 timesteps, startTime, endTime 필요 없음
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/forecast")
-                .queryParam("location", location)
-                .queryParam("fields", COMMON_FIELDS)
-                .queryParam("units", "metric")
-                .queryParam("timesteps", timesteps)
-                .queryParam("startTime", startTime)
-                .queryParam("endTime", endTime)
-                .queryParam("apikey", apiKey)
+                .queryParam("lat", lat)
+                .queryParam("lon", lon)
+                .queryParam("units", "metric") // 섭씨 온도를 위해 metric 사용
+                .queryParam("appid", apiKey)
                 .build()
                 .toUri();
 

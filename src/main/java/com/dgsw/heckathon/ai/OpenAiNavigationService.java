@@ -1,6 +1,6 @@
 package com.dgsw.heckathon.ai;
 
-import com.dgsw.heckathon.weather.TomorrowioApiService;
+import com.dgsw.heckathon.weather.OpenWeatherApiService;
 import com.dgsw.heckathon.weather.CurrentWeatherResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,11 +16,11 @@ public class OpenAiNavigationService {
 
     private static final Logger logger = LoggerFactory.getLogger(OpenAiNavigationService.class);
 
-    private final TomorrowioApiService tomorrowioApiService;
-    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private final OpenWeatherApiService openWeatherApiService; // TomorrowioApiService 대신 OpenWeatherApiService 사용
+    private final ExecutorService executorService = Executors.newFixedThreadPool(10); // 동시에 10개의 API 호출
 
-    public OpenAiNavigationService(TomorrowioApiService tomorrowioApiService) {
-        this.tomorrowioApiService = tomorrowioApiService;
+    public OpenAiNavigationService(OpenWeatherApiService openWeatherApiService) {
+        this.openWeatherApiService = openWeatherApiService;
     }
 
     /**
@@ -35,45 +35,45 @@ public class OpenAiNavigationService {
 
         for (double lat = minLat; lat <= maxLat; lat += latStep) {
             for (double lon = minLon; lon <= maxLon; lon += lonStep) {
-
                 final double currentLat = lat;
-                final double currentLon = lon; // 'double currentLon' 중복 선언 수정
+                final double currentLon = lon;
 
                 futures.add(CompletableFuture.runAsync(() -> {
                     try {
-                        CurrentWeatherResponse res = tomorrowioApiService.getCurrentWeather(currentLat, currentLon);
+                        CurrentWeatherResponse currentWeather = openWeatherApiService.getCurrentWeather(currentLat, currentLon);
 
-                        if (res != null && res.getData() != null && res.getData().getValues() != null) {
-
-                            CurrentWeatherResponse.Values v = res.getData().getValues();
-                            List<String> eventTypes = new ArrayList<>(); // 감지된 모든 이벤트 유형을 저장
+                        // OpenWeatherMap 응답 구조에 따라 데이터 추출
+                        if (currentWeather != null && currentWeather.getMain() != null && currentWeather.getWeather() != null) {
+                            List<String> eventTypes = new ArrayList<>();
 
                             /* ───── 강수 여부 확인 ───── */
-                            if (v.getPrecipitationIntensity() != null && v.getPrecipitationIntensity() > 0) {
-                                switch (v.getPrecipitationType() != null ? v.getPrecipitationType() : 0) {
-                                    case 1:
-                                        eventTypes.add("Rain"); // 비
-                                        break;
-                                    case 2:
-                                        eventTypes.add("Freezing Rain"); // 어는 비
-                                        break;
-                                    case 3:
-                                        eventTypes.add("Snow"); // 눈
-                                        break;
-                                    case 4:
-                                        eventTypes.add("Sleet"); // 진눈깨비
-                                        break;
-                                    case 5:
-                                        eventTypes.add("Hail"); // 우박
-                                        break;
-                                    default:
-                                        eventTypes.add("Precipitation"); // 유형을 알 수 없지만 강수량이 0보다 큰 경우 일반적인 강수
+                            // OpenWeatherMap의 weather code 또는 rain/snow 객체로 강수 여부 판단
+                            boolean isRaining = currentWeather.getRain() != null && currentWeather.getRain().get_1h() != null && currentWeather.getRain().get_1h() > 0;
+                            boolean isSnowing = currentWeather.getSnow() != null && currentWeather.getSnow().get_1h() != null && currentWeather.getSnow().get_1h() > 0;
+
+                            // OpenWeatherMap weather main 필드 확인 (Rain, Snow, Drizzle 등)
+                            if (currentWeather.getWeather() != null && !currentWeather.getWeather().isEmpty()) {
+                                String weatherMain = currentWeather.getWeather().get(0).getMain();
+                                int weatherId = currentWeather.getWeather().get(0).getId(); // weather ID로 상세 분류
+
+                                if ("Rain".equalsIgnoreCase(weatherMain) || isRaining) {
+                                    eventTypes.add("Rain"); // 비
+                                } else if ("Snow".equalsIgnoreCase(weatherMain) || isSnowing) {
+                                    eventTypes.add("Snow"); // 눈
+                                } else if ("Drizzle".equalsIgnoreCase(weatherMain)) {
+                                    eventTypes.add("Drizzle"); // 이슬비
+                                } else if (weatherId >= 200 && weatherId < 300) { // Thunderstorm (2xx)
+                                    eventTypes.add("Thunderstorm"); // 뇌우
                                 }
+                                // 우박은 weather main/description에 명시적으로 없으므로, precipitationType이 없는 OpenWeatherMap에서는 판단하기 어려움.
+                                // 필요하다면, 매우 높은 강수 강도나 특정 기상 조건(온도 등)을 조합하여 유추해야 함.
+                                // 현재 OpenWeatherMap API의 기본 응답으로는 우박을 명확히 구분하기 어려우므로, 이 부분은 유의해야 합니다.
+                                // 만약 우박 정보가 정말 필요하다면, 유료 API 또는 다른 데이터 소스를 고려해야 합니다.
                             }
 
                             /* ───── 흐림 여부 확인 ───── */
                             // 구름량이 50% 이상이면 흐림으로 간주
-                            if (v.getCloudCover() != null && v.getCloudCover() >= 50) {
+                            if (currentWeather.getClouds() != null && currentWeather.getClouds().getAll() != null && currentWeather.getClouds().getAll() >= 50) {
                                 eventTypes.add("Cloudiness"); // 흐림
                             }
 
@@ -86,7 +86,8 @@ public class OpenAiNavigationService {
                             }
                         }
                     } catch (Exception e) {
-                        logger.warn("Tomorrow.io 호출 실패 (lat={}, lon={}): {}", currentLat, currentLon, e.getMessage());
+                        logger.warn("OpenWeatherMap API 호출 실패 (lat={}, lon={}): {}", currentLat, currentLon, e.getMessage());
+                        // 오류 발생 시 해당 지점은 스캔에서 제외됩니다.
                     }
                 }, executorService));
             }
