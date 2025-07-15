@@ -26,18 +26,18 @@ public class OpenAiNavigationService {
     /**
      * 비·눈·우박·흐림 지역 좌표 스캔
      */
-    public List<Map<String, Double>> findSpecificWeatherEventsLocations(
-            double minLat, double maxLat, double minLon, double maxLon,
-            double latStep, double lonStep) {
+    public List<Map<String, Object>> findSpecificWeatherEventsLocations( // 반환 타입을 List<Map<String, Object>>로 변경
+                                                                         double minLat, double maxLat, double minLon, double maxLon,
+                                                                         double latStep, double lonStep) {
 
-        List<Map<String, Double>> eventLocations = Collections.synchronizedList(new ArrayList<>());
+        List<Map<String, Object>> eventLocations = Collections.synchronizedList(new ArrayList<>());
         List<CompletableFuture<Void>> futures = new ArrayList<>();
 
         for (double lat = minLat; lat <= maxLat; lat += latStep) {
             for (double lon = minLon; lon <= maxLon; lon += lonStep) {
 
                 final double currentLat = lat;
-                final double currentLon = lon;
+                final double currentLon = lon; // 'double currentLon' 중복 선언 수정
 
                 futures.add(CompletableFuture.runAsync(() -> {
                     try {
@@ -46,22 +46,42 @@ public class OpenAiNavigationService {
                         if (res != null && res.getData() != null && res.getData().getValues() != null) {
 
                             CurrentWeatherResponse.Values v = res.getData().getValues();
-                            boolean isEvent = false;
+                            List<String> eventTypes = new ArrayList<>(); // 감지된 모든 이벤트 유형을 저장
 
-                            /* ───── 강수 여부 ───── */
+                            /* ───── 강수 여부 확인 ───── */
                             if (v.getPrecipitationIntensity() != null && v.getPrecipitationIntensity() > 0) {
-                                isEvent = true;
-                            } else if (v.getPrecipitationType() != null && v.getPrecipitationType() > 0) {
-                                isEvent = true;
+                                switch (v.getPrecipitationType() != null ? v.getPrecipitationType() : 0) {
+                                    case 1:
+                                        eventTypes.add("Rain"); // 비
+                                        break;
+                                    case 2:
+                                        eventTypes.add("Freezing Rain"); // 어는 비
+                                        break;
+                                    case 3:
+                                        eventTypes.add("Snow"); // 눈
+                                        break;
+                                    case 4:
+                                        eventTypes.add("Sleet"); // 진눈깨비
+                                        break;
+                                    case 5:
+                                        eventTypes.add("Hail"); // 우박
+                                        break;
+                                    default:
+                                        eventTypes.add("Precipitation"); // 유형을 알 수 없지만 강수량이 0보다 큰 경우 일반적인 강수
+                                }
                             }
 
-                            /* ───── 흐림 여부 ───── */
-                            if (!isEvent && v.getCloudCover() != null && v.getCloudCover() >= 50) {
-                                isEvent = true;
+                            /* ───── 흐림 여부 확인 ───── */
+                            // 구름량이 50% 이상이면 흐림으로 간주
+                            if (v.getCloudCover() != null && v.getCloudCover() >= 50) {
+                                eventTypes.add("Cloudiness"); // 흐림
                             }
 
-                            if (isEvent) {
-                                Map<String, Double> point = Map.of("lat", currentLat, "lon", currentLon);
+                            if (!eventTypes.isEmpty()) { // 최소 하나 이상의 이벤트 유형이 감지된 경우에만 추가
+                                Map<String, Object> point = new HashMap<>(); // Map<String, Object> 사용
+                                point.put("lat", currentLat);
+                                point.put("lon", currentLon);
+                                point.put("types", eventTypes); // 이벤트 유형 리스트 추가
                                 eventLocations.add(point);
                             }
                         }

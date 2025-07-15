@@ -57,15 +57,15 @@ public class OpenAiController {
      * @param lonStep 경도 간격 (기본값 2.0)
      * @return 날씨 이벤트가 발생하는 지점의 위도, 경도 리스트
      */
-    @GetMapping("/earth") // 이전 제안에 따라 엔드포인트 이름 변경 (earth에서 weather-events-around-me)
+    @GetMapping("/earth") // 이전 제안에 따라 엔드포인트 이름 변경
     public ResponseEntity<Map<String, Object>> getWeatherEventsAroundMe(
             @RequestParam double currentLat, // 현재 위도 (필수 파라미터)
             @RequestParam double currentLon, // 현재 경도 (필수 파라미터)
-            @RequestParam(defaultValue = "5.0") double latStep, // 기본값 2.0도 간격으로 변경 (API 할당량 관리)
-            @RequestParam(defaultValue = "5.0") double lonStep) { // 기본값 2.0도 간격으로 변경 (API 할당량 관리)
+            @RequestParam(defaultValue = "5.0") double latStep, // 기본값 5.0도 간격
+            @RequestParam(defaultValue = "5.0") double lonStep) { // 기본값 5.0도 간격
 
         // 50도 범위 계산 (각 방향으로 25도씩)
-        double searchSpanDegrees = 25.0; // 50도 범위에 맞게 25.0으로 변경
+        double searchSpanDegrees = 25.0;
 
         double minLat = currentLat - searchSpanDegrees;
         double maxLat = currentLat + searchSpanDegrees;
@@ -76,13 +76,10 @@ public class OpenAiController {
         minLat = Math.max(minLat, -90.0);
         maxLat = Math.min(maxLat, 90.0);
 
-        List<Map<String, Double>> eventLocations;
+        // 이벤트 유형을 포함하기 위해 타입을 List<Map<String, Object>>로 변경
+        List<Map<String, Object>> eventLocations;
 
         // 경도 랩핑 처리 (경도 -180 ~ 180 경계를 넘어가는 경우)
-        // 이 로직은 minLon이 maxLon보다 크면서 동시에 범위가 -180/180 경계를 넘어갈 때 적용
-        // 예를 들어 minLon이 160, maxLon이 -170이 된 경우 (경도 160~180, -180~-170)
-        // 경도 정규화 후 minLon이 maxLon보다 큰 경우 (경도 랩핑 발생)
-        // 먼저 경도들을 -180 ~ 180 범위로 정규화합니다.
         double normalizedMinLon = (minLon + 180.0) % 360.0;
         if (normalizedMinLon < 0) normalizedMinLon += 360.0;
         normalizedMinLon -= 180.0;
@@ -91,12 +88,11 @@ public class OpenAiController {
         if (normalizedMaxLon < 0) normalizedMaxLon += 360.0;
         normalizedMaxLon -= 180.0;
 
-        // 경도 범위가 -180/180 경계를 넘어서는 경우 (예: 170도에서 동쪽으로 25도 -> 170 ~ 180, 그리고 -180 ~ -165)
+        // 경도 범위가 -180/180 경계를 넘어서는 경우
         if (normalizedMinLon > normalizedMaxLon) {
-            // 예를 들어 minLon이 160, maxLon이 -170이 된 경우 (경도 160~180, -180~-170)
-            List<Map<String, Double>> part1 = openAiNavigationService.findSpecificWeatherEventsLocations(
+            List<Map<String, Object>> part1 = openAiNavigationService.findSpecificWeatherEventsLocations(
                     minLat, maxLat, normalizedMinLon, 180.0, latStep, lonStep);
-            List<Map<String, Double>> part2 = openAiNavigationService.findSpecificWeatherEventsLocations(
+            List<Map<String, Object>> part2 = openAiNavigationService.findSpecificWeatherEventsLocations(
                     minLat, maxLat, -180.0, normalizedMaxLon, latStep, lonStep);
             eventLocations = new ArrayList<>(part1);
             eventLocations.addAll(part2);
