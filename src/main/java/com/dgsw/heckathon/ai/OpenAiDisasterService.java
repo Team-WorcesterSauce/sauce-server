@@ -1,12 +1,17 @@
 package com.dgsw.heckathon.ai;
 
-import com.dgsw.heckathon.weather.WeatherbitApiService;
-import com.dgsw.heckathon.weather.WeatherbitResponse;
+import com.dgsw.heckathon.weather.ForecastResponse;
+import com.dgsw.heckathon.weather.TomorrowioApiService;
+import com.dgsw.heckathon.weather.CurrentWeatherResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -14,50 +19,70 @@ public class OpenAiDisasterService {
 
     private static final Logger logger = LoggerFactory.getLogger(OpenAiDisasterService.class);
 
-    private final OpenAiApiService openAiApiService;
-    private final WeatherbitApiService weatherbitApiService; // WeatherbitApiService 주입
+    private final OpenAiApiService     openAiApiService;
+    private final TomorrowioApiService tomorrowioApiService;
 
-    public OpenAiDisasterService(OpenAiApiService openAiApiService, WeatherbitApiService weatherbitApiService) {
-        this.openAiApiService = openAiApiService;
-        this.weatherbitApiService = weatherbitApiService;
+    public OpenAiDisasterService(OpenAiApiService openAiApiService,
+                                 TomorrowioApiService tomorrowioApiService) {
+        this.openAiApiService   = openAiApiService;
+        this.tomorrowioApiService = tomorrowioApiService;
     }
 
-    /**
-     * Weatherbit.io에서 12시간 예보 데이터를 가져와 OpenAI에 전달하고 재난 예측을 받습니다.
-     * @param lat 위도
-     * @param lon 경도
-     * @param hours 예측할 시간 범위 (예: 12)
-     * @return OpenAI가 생성한 재난 예측 텍스트
-     */
+    /** 시간별 예보를 요약해 OpenAI 로 재난 예측을 요청 */
     public String predictDisasterBasedOnWeather(double lat, double lon, int hours) {
-        // 1. Weatherbit.io에서 미래 예보 데이터 가져오기
-        WeatherbitResponse forecastResponse = weatherbitApiService.getHourlyForecast(lat, lon, hours);
 
-        if (forecastResponse == null || forecastResponse.getData() == null || forecastResponse.getData().isEmpty()) {
-            logger.warn("Weatherbit API에서 기상 예보 데이터를 가져오는 데 실패했습니다.");
-            return "기상 예보 데이터를 가져오는 데 실패하여 재난 예측을 할 수 없습니다.";
+        /* 1) Tomorrow.io 예보 조회 */
+        ZonedDateTime nowUtc   = ZonedDateTime.now(ZoneOffset.UTC);
+        String startTime = nowUtc.format(DateTimeFormatter.ISO_INSTANT);
+        String endTime   = nowUtc.plusHours(hours).format(DateTimeFormatter.ISO_INSTANT);
+
+        ForecastResponse forecast =
+                tomorrowioApiService.getForecast(lat, lon, "1h", startTime, endTime);
+
+        if (forecast == null ||
+                forecast.getTimelines() == null ||
+                forecast.getTimelines().getHourly() == null ||
+                forecast.getTimelines().getHourly().isEmpty()) {
+
+            logger.warn("Tomorrow.io 예보 데이터를 가져오지 못했습니다.");
+            return "예보 데이터를 가져오지 못해 재난 예측을 수행할 수 없습니다.";
         }
 
-        // 2. 가져온 기상 데이터를 OpenAI에 전달할 형식으로 요약
-        StringBuilder weatherSummary = new StringBuilder();
-        weatherSummary.append("위도: ").append(lat).append(", 경도: ").append(lon).append(" 지역의 ");
-        weatherSummary.append("향후 ").append(hours).append("시간 동안의 시간별 기상 예보입니다:\n");
+        /* 2) 필요 구간만 추려 요약 */
+        List<ForecastResponse.Interval> hourly =
+                forecast.getTimelines().getHourly()
+                        .stream()
+                        .limit(hours)
+                        .collect(Collectors.toList());
 
-        List<WeatherbitResponse.WeatherData> relevantData = forecastResponse.getData().stream()
-                .limit(hours) // 요청한 시간만큼만 데이터 사용
-                .collect(Collectors.toList());
+        StringBuilder sb = new StringBuilder()
+                .append("위도 ").append(lat)
+                .append(", 경도 ").append(lon)
+                .append(" 지역 향후 ").append(hours)
+                .append("시간 예보:\n");
 
-        for (WeatherbitResponse.WeatherData data : relevantData) {
-            weatherSummary.append("- 시간: ").append(data.getTimestampLocal())
-                    .append(", 온도: ").append(data.getTemp()).append("°C")
-                    .append(", 습도: ").append(data.getRh()).append("%")
-                    .append(", 강수량: ").append(data.getPrecip()).append("mm/h")
-                    .append(", 풍속: ").append(data.getWindSpd()).append("m/s")
-                    .append(", 날씨: ").append(data.getWeather().getDescription())
-                    .append("\n");
+        for (ForecastResponse.Interval iv : hourly) {
+            ForecastResponse.Values v = iv.getValues();
+            String t = iv.getTime() != null && iv.getTime().length() >= 16
+                    ? iv.getTime().substring(11,16) : "N/A";
+
+            sb.append("- ").append(t)
+                    .append(" | T ").append(n(v.getTemperature())).append("°C")
+                    .append(" / 체감 ").append(n(v.getTemperatureApparent())).append("°C")
+                    .append(" | RH ").append(n(v.getHumidity())).append("%")
+                    .append(" | 강수 ").append(n(v.getPrecipitationIntensity())).append("mm/h")
+                    .append(" | WS ").append(n(v.getWindSpeed())).append("m/s")
+                    .append(" | 구름 ").append(n(v.getCloudCover())).append("%")
+                    .append(" | 코드 ").append(n(v.getWeatherCode()))
+                    .append('\n');
         }
 
-        // 3. OpenAI API에 요약된 데이터를 전달하여 재난 예측 요청
-        return openAiApiService.getDisasterPrediction(weatherSummary.toString());
+        /* 3) OpenAI 모델로 재난 예측 요청 */
+        return openAiApiService.getDisasterPrediction(sb.toString());
+    }
+
+    /** null → "N/A" 간단 변환 */
+    private static String n(Object o) {
+        return o == null ? "N/A" : o.toString();
     }
 }

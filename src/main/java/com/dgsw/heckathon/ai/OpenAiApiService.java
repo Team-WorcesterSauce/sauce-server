@@ -37,7 +37,7 @@ public class OpenAiApiService {
 
     public String getDisasterPrediction(String weatherDataSummary) {
         // OpenAI 모델에 보낼 메시지 구성
-        String systemPrompt = "당신은 기상 데이터를 분석하여 잠재적인 재난 위험을 경고하고 안전 수칙을 제안하는 전문가입니다. " +
+        String systemPrompt = "당신은 기상 데이터를 분석하여 잠재적인 해양 재난 위험을 경고하고 안전 수칙을 제안하는 전문가입니다. " +
                 "아래 제공된 12시간 기상 예보 데이터를 기반으로, 발생 가능한 항해 관련 재난 위험을 간결하게 요약하고 " +
                 "각 위험에 대한 간단한 안전 수칙을 제시해주세요. 한국어로 답변해주세요.";
 

@@ -1,54 +1,65 @@
 package com.dgsw.heckathon.weather;
 
-import com.dgsw.heckathon.ai.OpenAiApiService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
-import java.util.HashMap;
-import java.util.Map;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 
 @RestController
 public class WeatherController {
 
-    private final WeatherbitApiService weatherbitApiService;
-    // private final OpenAiApiService openAiApiService; // OpenAI 서비스 주입 제거
+    private final TomorrowioApiService tomorrowioApiService;
 
-    public WeatherController(WeatherbitApiService weatherbitApiService) {
-        this.weatherbitApiService = weatherbitApiService;
-        // this.openAiApiService = openAiApiService; // 생성자에서도 제거
+    public WeatherController(TomorrowioApiService tomorrowioApiService) {
+        this.tomorrowioApiService = tomorrowioApiService;
     }
 
+    /* ---------- 실시간(현재) 날씨 ---------- */
     @GetMapping("/current")
-    public ResponseEntity<WeatherbitResponse> getCurrentWeather(
+    public ResponseEntity<CurrentWeatherResponse> getCurrentWeather(
             @RequestParam double lat,
             @RequestParam double lon) {
 
-        WeatherbitResponse response = weatherbitApiService.getCurrentWeather(lat, lon);
+        CurrentWeatherResponse res = tomorrowioApiService.getCurrentWeather(lat, lon);
 
-        if (response != null && response.getData() != null && !response.getData().isEmpty()) {
-            return ResponseEntity.ok(response);
-        } else {
-            return ResponseEntity.notFound().build();
+        // values가 있는지 확인
+        if (res != null &&
+                res.getData() != null &&
+                res.getData().getValues() != null) {
+
+            return ResponseEntity.ok(res);
         }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
     }
 
+
+    /* ---------- 시간별 예보 ---------- */
     @GetMapping("/weather")
-    public ResponseEntity<WeatherbitResponse> getHourlyForecast(
+    public ResponseEntity<ForecastResponse> getHourlyForecast(
             @RequestParam double lat,
             @RequestParam double lon,
-            @RequestParam(defaultValue = "48") int hours) {
+            @RequestParam(defaultValue = "24") int hours) {
 
-        WeatherbitResponse response = weatherbitApiService.getHourlyForecast(lat, lon, hours);
+        ZonedDateTime nowUtc = ZonedDateTime.now(ZoneOffset.UTC);
+        String startTime = nowUtc.format(DateTimeFormatter.ISO_INSTANT);
+        String endTime   = nowUtc.plusHours(hours).format(DateTimeFormatter.ISO_INSTANT);
 
-        if (response != null && response.getData() != null && !response.getData().isEmpty()) {
-            return ResponseEntity.ok(response);
-        } else {
-            return ResponseEntity.notFound().build();
+        ForecastResponse res =
+                tomorrowioApiService.getForecast(lat, lon, "1h", startTime, endTime);
+
+        /* timelines → hourly 리스트 존재 여부 확인 (data 랩퍼 없음) */
+        if (res != null &&
+                res.getTimelines() != null &&
+                res.getTimelines().getHourly() != null &&
+                !res.getTimelines().getHourly().isEmpty()) {
+
+            return ResponseEntity.ok(res);
         }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
     }
 }
