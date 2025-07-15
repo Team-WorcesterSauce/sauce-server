@@ -1,0 +1,9 @@
+weatherbit:
+  api:
+    key: 6148f33f085843df9a30b230432e2164
+    base-url: https://api.weatherbit.io/v2.0
+
+logging:
+  level:
+    com.example.weatherservice: INFO
+    org.springframework: INFO
