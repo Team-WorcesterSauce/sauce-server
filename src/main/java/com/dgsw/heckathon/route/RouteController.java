@@ -18,7 +18,7 @@ public class RouteController {
         this.routeService = routeService;
     }
 
-    @GetMapping("/route")
+    @PostMapping("/route")
     public ResponseEntity<RouteResponse> calculateOptimalRoute(@RequestBody RouteRequest request) {
         // 입력값 유효성 검사
         if (request.getStartLat() == 0 && request.getStartLon() == 0 &&
