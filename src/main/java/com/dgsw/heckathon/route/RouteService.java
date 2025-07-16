@@ -110,6 +110,7 @@ public class RouteService {
                         "%s" +
                         "이 두 지점 사이의 최적의 해양 경로를 위도와 경도 쌍의 JSON 배열로 제공해주세요. " +
                         "경로는 약 5~10개의 경유지(waypoint)로 구성되어야 하며, 각 경유지는 다음 형식의 JSON 객체여야 합니다: " +
+                        "추가로 육지는 건널 수 없습니다." +
                         "{ \"latitude\": [위도], \"longitude\": [경도] }.\n" +
                         "JSON 응답만 제공하고 다른 설명은 일절 포함하지 마세요. JSON은 반드시 `{\"waypoints\": [...]}` 형식이어야 합니다.\n" +
                         "예시: {\"waypoints\": [{\"latitude\": 34.5, \"longitude\": 127.0}, {\"latitude\": 35.0, \"longitude\": 128.0}]}",
